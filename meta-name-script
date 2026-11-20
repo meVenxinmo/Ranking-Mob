@@ -1,0 +1,568 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local STAT_NAME = "Size"
+local PANEL_WIDTH = 0.29
+local PANEL_HEIGHT = 0.66
+local PANEL_TOP = 0.19
+local PANEL_RIGHT_MARGIN = 0.105
+local BUTTON_X = 0.322
+local BUTTON_Y = 0.032
+local ROW_HEIGHT = 56
+local REFRESH_DELAY = 3
+
+local env = getgenv and getgenv() or _G
+local globalConns = {}
+if env._LB_UNLOAD then
+    pcall(env._LB_UNLOAD)
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "CleanLeaderboard"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 50
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+local mounted = false
+if gethui then
+    mounted = pcall(function() gui.Parent = gethui() end) and gui.Parent ~= nil
+end
+if not mounted then
+    mounted = pcall(function() gui.Parent = game:GetService("CoreGui") end) and gui.Parent ~= nil
+end
+if not mounted then
+    gui.Parent = playerGui
+end
+
+local function formatNumber(n)
+    local s = tostring(math.floor(n))
+    local result = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    if result:sub(1, 1) == "," then result = result:sub(2) end
+    return result
+end
+
+local function addCorner(obj, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius)
+    c.Parent = obj
+    return c
+end
+
+local function addStroke(obj, transparency, thickness)
+    local s = Instance.new("UIStroke")
+    s.Color = Color3.fromRGB(150, 150, 155)
+    s.Transparency = transparency
+    s.Thickness = thickness
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = obj
+    return s
+end
+
+local toggle = Instance.new("ImageButton")
+toggle.Name = "Toggle"
+toggle.AnchorPoint = Vector2.new(0, 0)
+toggle.Position = UDim2.fromScale(BUTTON_X, BUTTON_Y)
+toggle.Size = UDim2.fromScale(0.05, 0.1)
+toggle.BackgroundColor3 = Color3.fromRGB(28, 28, 31)
+toggle.BackgroundTransparency = 0.05
+toggle.AutoButtonColor = true
+toggle.Parent = gui
+addCorner(toggle, 12)
+addStroke(toggle, 0.45, 2)
+
+local toggleRatio = Instance.new("UIAspectRatioConstraint")
+toggleRatio.AspectRatio = 1
+toggleRatio.Parent = toggle
+
+local toggleIcon = Instance.new("TextLabel")
+toggleIcon.BackgroundTransparency = 1
+toggleIcon.Size = UDim2.fromScale(1, 1)
+toggleIcon.Font = Enum.Font.GothamBold
+toggleIcon.Text = "+"
+toggleIcon.TextColor3 = Color3.fromRGB(235, 235, 238)
+toggleIcon.TextScaled = true
+toggleIcon.Parent = toggle
+local iconPad = Instance.new("UIPadding")
+iconPad.PaddingTop = UDim.new(0.22, 0)
+iconPad.PaddingBottom = UDim.new(0.22, 0)
+iconPad.PaddingLeft = UDim.new(0.22, 0)
+iconPad.PaddingRight = UDim.new(0.22, 0)
+iconPad.Parent = toggleIcon
+
+local panel = Instance.new("Frame")
+panel.Name = "Panel"
+panel.AnchorPoint = Vector2.new(1, 0)
+panel.Size = UDim2.fromScale(PANEL_WIDTH, PANEL_HEIGHT)
+panel.Position = UDim2.new(1 - PANEL_RIGHT_MARGIN, 0, -PANEL_HEIGHT - 0.1, 0)
+panel.BackgroundColor3 = Color3.fromRGB(24, 24, 27)
+panel.BackgroundTransparency = 0.04
+panel.ClipsDescendants = true
+panel.Visible = false
+panel.Parent = gui
+addCorner(panel, 10)
+addStroke(panel, 0.4, 3)
+
+local header = Instance.new("Frame")
+header.BackgroundTransparency = 1
+header.Size = UDim2.new(1, 0, 0, 44)
+header.Parent = panel
+
+local title = Instance.new("TextLabel")
+title.BackgroundTransparency = 1
+title.Size = UDim2.new(1, -50, 1, 0)
+title.Position = UDim2.new(0, 14, 0, 0)
+title.Font = Enum.Font.GothamBold
+title.Text = "Leaderboard"
+title.TextColor3 = Color3.fromRGB(240, 240, 243)
+title.TextSize = 20
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+local close = Instance.new("TextButton")
+close.AnchorPoint = Vector2.new(1, 0.5)
+close.Position = UDim2.new(1, -8, 0.5, 0)
+close.Size = UDim2.fromOffset(38, 38)
+close.BackgroundTransparency = 1
+close.Font = Enum.Font.GothamBold
+close.Text = "X"
+close.TextColor3 = Color3.fromRGB(215, 215, 220)
+close.TextSize = 18
+close.Parent = header
+
+local divider = Instance.new("Frame")
+divider.Position = UDim2.new(0, 0, 0, 44)
+divider.Size = UDim2.new(1, 0, 0, 1)
+divider.BackgroundColor3 = Color3.fromRGB(110, 110, 115)
+divider.BackgroundTransparency = 0.5
+divider.BorderSizePixel = 0
+divider.Parent = panel
+
+local colHeader = Instance.new("Frame")
+colHeader.BackgroundTransparency = 1
+colHeader.Position = UDim2.new(0, 0, 0, 45)
+colHeader.Size = UDim2.new(1, 0, 0, 26)
+colHeader.Parent = panel
+
+local colPlayers = Instance.new("TextLabel")
+colPlayers.BackgroundTransparency = 1
+colPlayers.Position = UDim2.new(0, 14, 0, 0)
+colPlayers.Size = UDim2.new(0.5, 0, 1, 0)
+colPlayers.Font = Enum.Font.Gotham
+colPlayers.Text = "Players"
+colPlayers.TextColor3 = Color3.fromRGB(165, 165, 170)
+colPlayers.TextSize = 13
+colPlayers.TextXAlignment = Enum.TextXAlignment.Left
+colPlayers.Parent = colHeader
+
+local colSize = Instance.new("TextLabel")
+colSize.BackgroundTransparency = 1
+colSize.AnchorPoint = Vector2.new(1, 0)
+colSize.Position = UDim2.new(1, -14, 0, 0)
+colSize.Size = UDim2.new(0.45, 0, 1, 0)
+colSize.Font = Enum.Font.Gotham
+colSize.Text = "Size"
+colSize.TextColor3 = Color3.fromRGB(165, 165, 170)
+colSize.TextSize = 13
+colSize.TextXAlignment = Enum.TextXAlignment.Right
+colSize.Parent = colHeader
+
+local list = Instance.new("ScrollingFrame")
+list.BackgroundTransparency = 1
+list.BorderSizePixel = 0
+list.Position = UDim2.new(0, 0, 0, 72)
+list.Size = UDim2.new(1, 0, 1, -72)
+list.ScrollBarThickness = 3
+list.ScrollBarImageColor3 = Color3.fromRGB(150, 150, 155)
+list.CanvasSize = UDim2.new()
+list.AutomaticCanvasSize = Enum.AutomaticSize.Y
+list.Parent = panel
+
+local layout = Instance.new("UIListLayout")
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = list
+
+local card = Instance.new("Frame")
+card.Name = "ProfileCard"
+card.AnchorPoint = Vector2.new(0.5, 0.5)
+card.Position = UDim2.fromScale(0.5, 0.5)
+card.Size = UDim2.fromScale(0.95, 0.97)
+card.BackgroundColor3 = Color3.fromRGB(30, 30, 33)
+card.Visible = false
+card.ZIndex = 10
+card.Parent = panel
+addCorner(card, 10)
+addStroke(card, 0.4, 2)
+
+local cardLayout = Instance.new("UIListLayout")
+cardLayout.FillDirection = Enum.FillDirection.Vertical
+cardLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+cardLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+cardLayout.SortOrder = Enum.SortOrder.LayoutOrder
+cardLayout.Padding = UDim.new(0, 6)
+cardLayout.Parent = card
+
+local avatar = Instance.new("ImageLabel")
+avatar.LayoutOrder = 1
+avatar.Size = UDim2.fromScale(1, 0.36)
+avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
+avatar.ZIndex = 11
+avatar.Parent = card
+addCorner(avatar, 12)
+addStroke(avatar, 0.6, 2)
+local avatarRatio = Instance.new("UIAspectRatioConstraint")
+avatarRatio.AspectRatio = 1
+avatarRatio.AspectType = Enum.AspectType.FitWithinMaxSize
+avatarRatio.DominantAxis = Enum.DominantAxis.Height
+avatarRatio.Parent = avatar
+
+local nameRow = Instance.new("Frame")
+nameRow.LayoutOrder = 2
+nameRow.BackgroundTransparency = 1
+nameRow.Size = UDim2.new(0.9, 0, 0, 40)
+nameRow.ZIndex = 11
+nameRow.Parent = card
+
+local cardName = Instance.new("TextLabel")
+cardName.BackgroundTransparency = 1
+cardName.Size = UDim2.new(1, -86, 1, 0)
+cardName.Font = Enum.Font.GothamBold
+cardName.TextColor3 = Color3.fromRGB(240, 240, 243)
+cardName.TextScaled = true
+cardName.TextXAlignment = Enum.TextXAlignment.Left
+cardName.ZIndex = 11
+cardName.Parent = nameRow
+local nameLimit = Instance.new("UITextSizeConstraint")
+nameLimit.MaxTextSize = 22
+nameLimit.MinTextSize = 10
+nameLimit.Parent = cardName
+
+local copyBtn = Instance.new("TextButton")
+copyBtn.AnchorPoint = Vector2.new(1, 0.5)
+copyBtn.Position = UDim2.new(1, 0, 0.5, 0)
+copyBtn.Size = UDim2.new(0, 78, 0, 32)
+copyBtn.BackgroundColor3 = Color3.fromRGB(52, 52, 57)
+copyBtn.Font = Enum.Font.GothamBold
+copyBtn.Text = "Copy"
+copyBtn.TextColor3 = Color3.fromRGB(235, 235, 238)
+copyBtn.TextSize = 15
+copyBtn.ZIndex = 11
+copyBtn.Parent = nameRow
+addCorner(copyBtn, 8)
+addStroke(copyBtn, 0.6, 1)
+
+local cardDisplay = Instance.new("TextLabel")
+cardDisplay.LayoutOrder = 3
+cardDisplay.BackgroundTransparency = 1
+cardDisplay.Size = UDim2.new(0.9, 0, 0, 22)
+cardDisplay.Font = Enum.Font.Gotham
+cardDisplay.TextColor3 = Color3.fromRGB(160, 160, 165)
+cardDisplay.TextSize = 15
+cardDisplay.TextXAlignment = Enum.TextXAlignment.Left
+cardDisplay.TextTruncate = Enum.TextTruncate.AtEnd
+cardDisplay.ZIndex = 11
+cardDisplay.Parent = card
+
+local cardRank = Instance.new("TextLabel")
+cardRank.LayoutOrder = 4
+cardRank.BackgroundTransparency = 1
+cardRank.Size = UDim2.new(0.9, 0, 0, 24)
+cardRank.Font = Enum.Font.Gotham
+cardRank.TextColor3 = Color3.fromRGB(200, 200, 205)
+cardRank.TextSize = 16
+cardRank.TextXAlignment = Enum.TextXAlignment.Left
+cardRank.ZIndex = 11
+cardRank.Parent = card
+
+local cardSize = Instance.new("TextLabel")
+cardSize.LayoutOrder = 5
+cardSize.BackgroundTransparency = 1
+cardSize.Size = UDim2.new(0.9, 0, 0, 34)
+cardSize.Font = Enum.Font.GothamBold
+cardSize.TextColor3 = Color3.fromRGB(255, 255, 255)
+cardSize.TextSize = 24
+cardSize.TextXAlignment = Enum.TextXAlignment.Left
+cardSize.TextTruncate = Enum.TextTruncate.None
+cardSize.ZIndex = 11
+cardSize.Parent = card
+
+local cardClose = Instance.new("TextButton")
+cardClose.LayoutOrder = 6
+cardClose.Size = UDim2.new(0.9, 0, 0, 40)
+cardClose.BackgroundColor3 = Color3.fromRGB(48, 48, 52)
+cardClose.Font = Enum.Font.GothamBold
+cardClose.Text = "Back"
+cardClose.TextColor3 = Color3.fromRGB(235, 235, 238)
+cardClose.TextSize = 16
+cardClose.ZIndex = 11
+cardClose.Parent = card
+addCorner(cardClose, 8)
+
+local copyToken = 0
+copyBtn.MouseButton1Click:Connect(function()
+    local text = cardName.Text
+    local fn = setclipboard or toclipboard or (Clipboard and Clipboard.set)
+    local ok = false
+    if fn then ok = pcall(fn, text) end
+    copyToken += 1
+    local token = copyToken
+    copyBtn.Text = ok and "Copied" or "Failed"
+    task.delay(1.2, function()
+        if copyToken == token then copyBtn.Text = "Copy" end
+    end)
+end)
+
+local function getThumb(userId)
+    return "rbxthumb://type=AvatarBust&id=" .. userId .. "&w=420&h=420"
+end
+
+local function readStat(plr)
+    local ls = plr:FindFirstChild("leaderstats")
+    if not ls then return 0 end
+    local v = ls:FindFirstChild(STAT_NAME)
+    if not v then
+        for _, child in ipairs(ls:GetChildren()) do
+            if child:IsA("ValueBase") and typeof(child.Value) == "number" then
+                v = child
+                break
+            end
+        end
+    end
+    if v and typeof(v.Value) == "number" then return v.Value end
+    return 0
+end
+
+local rows = {}
+local cardPlayer = nil
+local dirty = true
+
+local function openCard(plr, rank, value)
+    cardPlayer = plr
+    copyBtn.Text = "Copy"
+    cardName.Text = plr.Name
+    cardDisplay.Text = "@" .. plr.DisplayName
+    cardRank.Text = "Rank #" .. rank
+    cardSize.Text = formatNumber(value)
+    avatar.Image = getThumb(plr.UserId)
+    card.Visible = true
+end
+
+local function createRow(plr)
+    local row = Instance.new("TextButton")
+    row.Size = UDim2.new(1, 0, 0, ROW_HEIGHT)
+    row.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    row.BackgroundTransparency = plr == player and 0.92 or 1
+    row.AutoButtonColor = false
+    row.Text = ""
+    row.BorderSizePixel = 0
+    row.Parent = list
+
+    local thumb = Instance.new("ImageLabel")
+    thumb.Position = UDim2.new(0, 12, 0.5, -19)
+    thumb.Size = UDim2.fromOffset(38, 38)
+    thumb.BackgroundColor3 = Color3.fromRGB(45, 45, 49)
+    thumb.Parent = row
+    addCorner(thumb, 6)
+    thumb.Image = getThumb(plr.UserId)
+
+    local name = Instance.new("TextLabel")
+    name.BackgroundTransparency = 1
+    name.Position = UDim2.new(0, 60, 0, 0)
+    name.Size = UDim2.new(0.45, 0, 1, 0)
+    name.Font = Enum.Font.GothamMedium
+    name.Text = plr.Name
+    name.TextColor3 = Color3.fromRGB(235, 235, 238)
+    name.TextSize = 16
+    name.TextXAlignment = Enum.TextXAlignment.Left
+    name.TextTruncate = Enum.TextTruncate.AtEnd
+    name.Parent = row
+
+    local val = Instance.new("TextLabel")
+    val.BackgroundTransparency = 1
+    val.AnchorPoint = Vector2.new(1, 0)
+    val.Position = UDim2.new(1, -12, 0, 0)
+    val.Size = UDim2.new(0.5, -40, 1, 0)
+    val.Font = Enum.Font.GothamBold
+    val.Text = "0"
+    val.TextColor3 = Color3.fromRGB(255, 255, 255)
+    val.TextSize = 16
+    val.TextXAlignment = Enum.TextXAlignment.Right
+    val.TextTruncate = Enum.TextTruncate.None
+    val.Parent = row
+
+    local line = Instance.new("Frame")
+    line.AnchorPoint = Vector2.new(0, 1)
+    line.Position = UDim2.new(0, 0, 1, 0)
+    line.Size = UDim2.new(1, 0, 0, 1)
+    line.BackgroundColor3 = Color3.fromRGB(110, 110, 115)
+    line.BackgroundTransparency = 0.7
+    line.BorderSizePixel = 0
+    line.Parent = row
+
+    local data = {row = row, val = val, rank = 0, value = 0}
+    row.MouseButton1Click:Connect(function()
+        openCard(plr, data.rank, data.value)
+    end)
+    rows[plr] = data
+end
+
+local function refresh()
+    local entries = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if not rows[plr] then createRow(plr) end
+        table.insert(entries, {plr = plr, value = readStat(plr)})
+    end
+    table.sort(entries, function(a, b) return a.value > b.value end)
+    for i, entry in ipairs(entries) do
+        local r = rows[entry.plr]
+        r.row.LayoutOrder = i
+        r.rank = i
+        r.value = entry.value
+        local text = formatNumber(entry.value)
+        if r.val.Text ~= text then r.val.Text = text end
+    end
+    for plr, r in pairs(rows) do
+        if not plr.Parent then
+            r.row:Destroy()
+            rows[plr] = nil
+        end
+    end
+    if card.Visible and cardPlayer and rows[cardPlayer] then
+        cardRank.Text = "Rank #" .. rows[cardPlayer].rank
+        cardSize.Text = formatNumber(rows[cardPlayer].value)
+    elseif card.Visible then
+        card.Visible = false
+    end
+end
+
+local function hookValue(inst)
+    if inst:IsA("ValueBase") then
+        inst.Changed:Connect(function() dirty = true end)
+    end
+end
+
+local function hookStats(ls)
+    for _, child in ipairs(ls:GetChildren()) do hookValue(child) end
+    ls.ChildAdded:Connect(function(child)
+        hookValue(child)
+        dirty = true
+    end)
+end
+
+local function watch(plr)
+    local ls = plr:FindFirstChild("leaderstats")
+    if ls then hookStats(ls) end
+    plr.ChildAdded:Connect(function(child)
+        if child.Name == "leaderstats" then
+            hookStats(child)
+            dirty = true
+        end
+    end)
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do watch(plr) end
+globalConns[#globalConns + 1] = Players.PlayerAdded:Connect(function(plr)
+    watch(plr)
+    dirty = true
+end)
+globalConns[#globalConns + 1] = Players.PlayerRemoving:Connect(function(plr)
+    local r = rows[plr]
+    if r then
+        r.row:Destroy()
+        rows[plr] = nil
+    end
+    dirty = true
+end)
+
+local isOpen = false
+local openPos = UDim2.new(1 - PANEL_RIGHT_MARGIN, 0, PANEL_TOP, 0)
+local hiddenPos = UDim2.new(1 - PANEL_RIGHT_MARGIN, 0, -PANEL_HEIGHT - 0.1, 0)
+local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local currentTween
+
+local function setOpen(state)
+    if isOpen == state then return end
+    isOpen = state
+    toggleIcon.Text = state and "-" or "+"
+    if currentTween then currentTween:Cancel() end
+    if state then
+        card.Visible = false
+        refresh()
+        dirty = false
+        panel.Visible = true
+        currentTween = TweenService:Create(panel, tweenInfo, {Position = openPos})
+        currentTween:Play()
+    else
+        card.Visible = false
+        currentTween = TweenService:Create(panel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = hiddenPos})
+        currentTween:Play()
+        currentTween.Completed:Connect(function()
+            if not isOpen then panel.Visible = false end
+        end)
+    end
+end
+
+local toggleScale = Instance.new("UIScale")
+toggleScale.Scale = 1
+toggleScale.Parent = toggle
+
+local function playClickEffect()
+    local ring = Instance.new("Frame")
+    ring.AnchorPoint = Vector2.new(0.5, 0.5)
+    ring.Position = UDim2.fromScale(0.5, 0.5)
+    ring.Size = UDim2.fromScale(0.85, 0.85)
+    ring.BackgroundTransparency = 1
+    ring.ZIndex = 0
+    ring.Parent = toggle
+    local ringCorner = Instance.new("UICorner")
+    ringCorner.CornerRadius = UDim.new(0, 14)
+    ringCorner.Parent = ring
+    local ringStroke = Instance.new("UIStroke")
+    ringStroke.Color = Color3.fromRGB(235, 235, 240)
+    ringStroke.Thickness = 2
+    ringStroke.Transparency = 0.15
+    ringStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    ringStroke.Parent = ring
+
+    local expand = TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    TweenService:Create(ring, expand, {Size = UDim2.fromScale(1.45, 1.45)}):Play()
+    TweenService:Create(ringStroke, expand, {Transparency = 1, Thickness = 0.5}):Play()
+    task.delay(0.5, function() ring:Destroy() end)
+
+    local down = TweenService:Create(toggleScale, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 0.88})
+    down:Play()
+    down.Completed:Connect(function()
+        TweenService:Create(toggleScale, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1}):Play()
+    end)
+end
+
+toggle.MouseButton1Click:Connect(function()
+    playClickEffect()
+    setOpen(not isOpen)
+end)
+close.MouseButton1Click:Connect(function() setOpen(false) end)
+cardClose.MouseButton1Click:Connect(function() card.Visible = false end)
+
+local stopped = false
+task.spawn(function()
+    while not stopped do
+        task.wait(REFRESH_DELAY)
+        if isOpen and dirty and not stopped then
+            dirty = false
+            pcall(refresh)
+        end
+    end
+end)
+
+env._LB_UNLOAD = function()
+    if stopped then return end
+    stopped = true
+    for _, c in ipairs(globalConns) do
+        if c.Connected then c:Disconnect() end
+    end
+    pcall(function() gui:Destroy() end)
+    env._LB_UNLOAD = nil
+end
